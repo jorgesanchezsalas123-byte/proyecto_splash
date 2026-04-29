@@ -348,23 +348,51 @@
   }
 
   .tiempo-item label {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    display: block;
+    margin-bottom: 6px;
   }
 
-  .tiempo-valor {
+  .tiempo-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  input[type="number"].input-minutos {
+    width: 72px;
+    padding: 5px 8px;
+    border: 1.5px solid var(--borde);
+    border-radius: 8px;
     font-family: 'Space Mono', monospace;
-    font-size: 0.85rem;
-    color: var(--agua);
+    font-size: 0.9rem;
     font-weight: 700;
-    text-transform: none;
-    letter-spacing: 0;
+    color: var(--agua);
+    background: var(--superficie);
+    outline: none;
+    text-align: center;
+    transition: border-color 0.2s;
+    -moz-appearance: textfield;
+  }
+
+  input[type="number"].input-minutos::-webkit-inner-spin-button,
+  input[type="number"].input-minutos::-webkit-outer-spin-button {
+    opacity: 1;
+  }
+
+  input[type="number"].input-minutos:focus {
+    border-color: var(--agua-claro);
+  }
+
+  .min-label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-weight: 600;
+    white-space: nowrap;
   }
 
   input[type="range"] {
     width: 100%;
-    margin-top: 6px;
     accent-color: var(--agua);
   }
 
@@ -511,20 +539,26 @@
 
     <div class="tiempo-grid">
       <div class="tiempo-item">
-        <label>
-          Tiempo encendido
-          <span class="tiempo-valor" id="valorEncendido">30 min</span>
-        </label>
-        <input type="range" id="sliderEncendido" min="1" max="120" value="30"
-               oninput="actualizarSlider('Encendido', this.value)">
+        <label>Tiempo encendido</label>
+        <div class="tiempo-controls">
+          <input type="number" class="input-minutos" id="inputEncendido"
+                 min="0.1" max="120" step="0.1" value="30"
+                 oninput="sincronizarDesdeInput('Encendido')">
+          <span class="min-label">min</span>
+        </div>
+        <input type="range" id="sliderEncendido" min="0.1" max="120" step="0.1" value="30"
+               oninput="sincronizarDesdeSlider('Encendido')">
       </div>
       <div class="tiempo-item">
-        <label>
-          Tiempo apagado
-          <span class="tiempo-valor" id="valorApagado">30 min</span>
-        </label>
-        <input type="range" id="sliderApagado" min="1" max="120" value="30"
-               oninput="actualizarSlider('Apagado', this.value)">
+        <label>Tiempo apagado</label>
+        <div class="tiempo-controls">
+          <input type="number" class="input-minutos" id="inputApagado"
+                 min="0.1" max="120" step="0.1" value="30"
+                 oninput="sincronizarDesdeInput('Apagado')">
+          <span class="min-label">min</span>
+        </div>
+        <input type="range" id="sliderApagado" min="0.1" max="120" step="0.1" value="30"
+               oninput="sincronizarDesdeSlider('Apagado')">
       </div>
     </div>
 
@@ -563,26 +597,32 @@
 let db = null;
 let modoManualActivo = false;
 
+// Datos del ciclo — la app los usa para calcular el countdown localmente
+// en vez de depender de lo que reporte el ESP32 cada N segundos.
+let cicloEncendido   = false;   // true = blower ON ahora
+let cicloSegundos    = 0;       // segundos transcurridos en el ciclo actual (reportado por ESP32)
+let tiempoEncMinutos = 30;      // minutos de encendido configurados
+let tiempoApaMinutos = 30;      // minutos de apagado configurados
+let tsRecibido       = 0;       // Date.now() cuando se recibió cicloSegundos (para interpolar)
+
+// setInterval que corre el countdown localmente cada segundo
+let intervalCountdown = null;
+
 // ─── CONECTAR A FIREBASE ──────────────────────────────────────
 function conectar() {
   const host = document.getElementById('fbHost').value.trim();
   const auth = document.getElementById('fbAuth').value.trim();
-
   if (!host || !auth) {
     alert('Por favor ingresa la URL y el secreto de tu base de datos Firebase.');
     return;
   }
-
-  // Guardar en localStorage para no tener que ingresar cada vez
   localStorage.setItem('fb_host', host);
   localStorage.setItem('fb_auth', auth);
-
   iniciarFirebase(host, auth);
 }
 
 function iniciarFirebase(host, apiKey) {
   try {
-    // Limpiar instancias anteriores
     if (firebase.apps.length) {
       firebase.app().delete().then(() => crearApp(host, apiKey));
     } else {
@@ -594,19 +634,10 @@ function iniciarFirebase(host, apiKey) {
 }
 
 function crearApp(host, apiKey) {
-  // Extraer el project ID de la URL
   const match = host.match(/https:\/\/([^\.]+)/);
   const projectId = match ? match[1] : 'mi-proyecto';
-
-  const config = {
-    apiKey:      apiKey,
-    databaseURL: host,
-    projectId:   projectId,
-  };
-
-  firebase.initializeApp(config);
+  firebase.initializeApp({ apiKey, databaseURL: host, projectId });
   db = firebase.database();
-
   escucharCambios();
 }
 
@@ -614,42 +645,46 @@ function crearApp(host, apiKey) {
 function escucharCambios() {
   if (!db) return;
 
-  // Monitorear conexión
   db.ref('.info/connected').on('value', snap => {
     const online = snap.val();
     document.getElementById('dotEstado').className = 'dot ' + (online ? 'online' : 'offline');
     document.getElementById('textoConexion').textContent = online ? 'Conectado' : 'Reconectando...';
-
     if (online) {
-      // Mostrar paneles
-      ['panelEstado','panelManual','panelTiempos','panelMetricas'].forEach(id => {
-        document.getElementById(id).classList.remove('oculto');
-      });
+      ['panelEstado','panelManual','panelTiempos','panelMetricas'].forEach(id =>
+        document.getElementById(id).classList.remove('oculto')
+      );
       document.getElementById('config-inicial').classList.add('oculto');
     }
   });
 
-  // Escuchar estado del blower
   db.ref('/estado').on('value', snap => {
     const estado = snap.val();
     if (!estado) return;
+
+    // Guardar punto de referencia del ciclo para interpolación local
+    cicloEncendido = estado.blower === 'ON';
+    if (estado.cicloSegundos !== undefined) {
+      cicloSegundos = estado.cicloSegundos;
+      tsRecibido    = Date.now();
+    }
+
     actualizarUI(estado);
   });
 
-  // Escuchar configuración
   db.ref('/config').on('value', snap => {
     const cfg = snap.val();
     if (!cfg) return;
 
-    // Sincronizar sliders
     if (cfg.tiempoEncendido) {
+      tiempoEncMinutos = cfg.tiempoEncendido;
       document.getElementById('sliderEncendido').value = cfg.tiempoEncendido;
-      document.getElementById('valorEncendido').textContent = cfg.tiempoEncendido + ' min';
+      document.getElementById('inputEncendido').value  = cfg.tiempoEncendido;
       document.getElementById('metricaTEnc').textContent = cfg.tiempoEncendido + ' min';
     }
     if (cfg.tiempoApagado) {
+      tiempoApaMinutos = cfg.tiempoApagado;
       document.getElementById('sliderApagado').value = cfg.tiempoApagado;
-      document.getElementById('valorApagado').textContent = cfg.tiempoApagado + ' min';
+      document.getElementById('inputApagado').value  = cfg.tiempoApagado;
       document.getElementById('metricaTApa').textContent = cfg.tiempoApagado + ' min';
     }
     if (cfg.modoManual !== undefined) {
@@ -660,51 +695,52 @@ function escucharCambios() {
       botones.style.pointerEvents = cfg.modoManual ? 'auto' : 'none';
     }
   });
+
+  // Arrancar countdown local — corre cada segundo sin importar Firebase
+  if (intervalCountdown) clearInterval(intervalCountdown);
+  intervalCountdown = setInterval(tickCountdown, 1000);
+}
+
+// ─── COUNTDOWN LOCAL (corre en el navegador, suave, sin saltos) ──
+function tickCountdown() {
+  if (modoManualActivo) {
+    document.getElementById('countdown').textContent = 'Modo manual activo';
+    return;
+  }
+
+  // Calcular cuántos segundos han pasado desde que Firebase nos dio el dato
+  const segsDesdeRecepcion = Math.floor((Date.now() - tsRecibido) / 1000);
+  const segsEnCiclo        = cicloSegundos + segsDesdeRecepcion;
+
+  const duracionSeg = (cicloEncendido ? tiempoEncMinutos : tiempoApaMinutos) * 60;
+  const restante    = Math.max(0, duracionSeg - segsEnCiclo);
+
+  const min = Math.floor(restante / 60);
+  const seg = restante % 60;
+  const texto = `${String(min).padStart(2,'0')}:${String(seg).padStart(2,'0')}`;
+  const prefijo = cicloEncendido ? '⬤ Próximo apagado: ' : '◯ Próximo encendido: ';
+
+  document.getElementById('countdown').textContent = prefijo + texto;
 }
 
 // ─── ACTUALIZAR INTERFAZ ──────────────────────────────────────
 function actualizarUI(estado) {
   const encendido = estado.blower === 'ON';
+  document.getElementById('blowerStatus').classList.toggle('on', encendido);
+  document.getElementById('blowerTexto').textContent = encendido ? 'ENCENDIDO' : 'APAGADO';
+  document.getElementById('blowerModo').textContent  = 'Modo: ' + (estado.modo === 'MANUAL' ? 'manual' : 'automático');
+  document.getElementById('btnEncender').classList.toggle('activo',  encendido);
+  document.getElementById('btnApagar').classList.toggle('activo',   !encendido);
 
-  // Estado visual
-  const statusDiv  = document.getElementById('blowerStatus');
-  const textoEl    = document.getElementById('blowerTexto');
-  const modoEl     = document.getElementById('blowerModo');
-  const countEl    = document.getElementById('countdown');
-
-  if (encendido) {
-    statusDiv.classList.add('on');
-    textoEl.textContent = 'ENCENDIDO';
-  } else {
-    statusDiv.classList.remove('on');
-    textoEl.textContent = 'APAGADO';
-  }
-
-  modoEl.textContent = 'Modo: ' + (estado.modo === 'MANUAL' ? 'manual' : 'automático');
-  countEl.textContent = estado.tiempoRestante
-    ? (encendido ? '⬤ Próximo apagado: ' : '◯ Próximo encendido: ') + estado.tiempoRestante
-    : '—';
-
-  // Métricas
-  if (estado.rssi) {
-    document.getElementById('metricaRSSI').textContent = estado.rssi + ' dBm';
-  }
-  if (estado.modo) {
-    document.getElementById('metricaModo').textContent = estado.modo;
-  }
-
-  // Resaltar botón activo
-  document.getElementById('btnEncender').classList.toggle('activo', encendido);
-  document.getElementById('btnApagar').classList.toggle('activo', !encendido);
+  if (estado.rssi) document.getElementById('metricaRSSI').textContent = estado.rssi + ' dBm';
+  if (estado.modo) document.getElementById('metricaModo').textContent  = estado.modo;
 }
 
 // ─── CAMBIAR MODO ─────────────────────────────────────────────
 function cambiarModo() {
   if (!db) return;
   const esManual = document.getElementById('toggleManual').checked;
-
   db.ref('/config/modoManual').set(esManual);
-
   const botones = document.getElementById('botonesManual');
   botones.style.opacity = esManual ? '1' : '0.3';
   botones.style.pointerEvents = esManual ? 'auto' : 'none';
@@ -716,32 +752,49 @@ function comandoManual(cmd) {
   db.ref('/config/comandoManual').set(cmd);
 }
 
-// ─── SLIDERS ─────────────────────────────────────────────────
+// ─── SLIDERS + INPUTS SINCRONIZADOS ──────────────────────────
+function sincronizarDesdeSlider(cual) {
+  const val = parseFloat(document.getElementById('slider' + cual).value);
+  document.getElementById('input' + cual).value = val;
+}
+
+function sincronizarDesdeInput(cual) {
+  let val = parseFloat(document.getElementById('input' + cual).value);
+  if (isNaN(val) || val < 0.1) val = 0.1;
+  if (val > 120) val = 120;
+  // Redondear a 1 decimal para evitar ruido
+  val = Math.round(val * 10) / 10;
+  document.getElementById('slider' + cual).value = val;
+}
+
 function actualizarSlider(cual, val) {
-  document.getElementById('valor' + cual).textContent = val + ' min';
+  // Compatibilidad con código viejo — no hace falta pero por si acaso
+  document.getElementById('input' + cual).value = val;
 }
 
 // ─── GUARDAR TIEMPOS ──────────────────────────────────────────
 function guardarTiempos() {
   if (!db) return;
-  const tEnc = parseInt(document.getElementById('sliderEncendido').value);
-  const tApa = parseInt(document.getElementById('sliderApagado').value);
+  let tEnc = parseFloat(document.getElementById('inputEncendido').value);
+  let tApa = parseFloat(document.getElementById('inputApagado').value);
 
-  db.ref('/config').update({
-    tiempoEncendido: tEnc,
-    tiempoApagado:   tApa,
-  }).then(() => {
+  // Validar
+  if (isNaN(tEnc) || tEnc < 0.1) tEnc = 0.1;
+  if (isNaN(tApa) || tApa < 0.1) tApa = 0.1;
+  if (tEnc > 120) tEnc = 120;
+  if (tApa > 120) tApa = 120;
+
+  db.ref('/config').update({ tiempoEncendido: tEnc, tiempoApagado: tApa }).then(() => {
     const btn = document.querySelector('.btn-guardar-tiempo');
     btn.textContent = '✔ Guardado!';
     setTimeout(() => { btn.textContent = '💾 Guardar configuración'; }, 2000);
   });
 }
 
-// ─── AUTO-CONECTAR SI HAY DATOS GUARDADOS ────────────────────
+// ─── AUTO-CONECTAR ────────────────────────────────────────────
 window.onload = () => {
   const host = localStorage.getItem('fb_host');
   const auth = localStorage.getItem('fb_auth');
-
   if (host && auth) {
     document.getElementById('fbHost').value = host;
     document.getElementById('fbAuth').value = auth;
