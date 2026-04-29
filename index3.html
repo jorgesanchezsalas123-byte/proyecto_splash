@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blower Tilapias</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;600&display=swap');
+
+  :root {
+    --agua: #0d7377;
+    --agua-oscuro: #085f63;
+    --agua-claro: #14a8b0;
+    --superficie: #f0f7f7;
+    --borde: #c2dede;
+    --texto: #0a2e30;
+    --muted: #4a7c7e;
+    --verde: #2d8a4e;
+    --verde-claro: #e6f4ec;
+    --rojo: #b5373c;
+    --rojo-claro: #fceaea;
+    --amarillo: #c8880a;
+    --amarillo-claro: #fdf5e0;
+    --fondo: #e8f4f4;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--fondo);
+    min-height: 100vh;
+    color: var(--texto);
+  }
+
+  header {
+    background: var(--agua);
+    color: white;
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .logo {
+    width: 36px; height: 36px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+
+  header h1 {
+    font-family: 'Space Mono', monospace;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+
+  header p { font-size: 0.75rem; opacity: 0.75; margin-top: 1px; }
+
+  .conexion-badge {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    background: rgba(255,255,255,0.15);
+    padding: 4px 12px;
+    border-radius: 20px;
+  }
+
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #aaa; transition: background 0.4s; }
+  .dot.online  { background: #4ade80; box-shadow: 0 0 0 3px rgba(74,222,128,0.25); }
+  .dot.offline { background: #f87171; }
+
+  main {
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 1.25rem 1rem 3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  #config-inicial {
+    background: white;
+    border-radius: 16px;
+    border: 1.5px dashed var(--borde);
+    padding: 1.5rem;
+  }
+
+  #config-inicial h2 {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.9rem;
+    color: var(--agua);
+    margin-bottom: 1rem;
+  }
+
+  .campo { margin-bottom: 0.75rem; }
+
+  label {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1.5px solid var(--borde);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-family: 'Space Mono', monospace;
+    background: var(--superficie);
+    color: var(--texto);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input[type="text"]:focus, input[type="password"]:focus { border-color: var(--agua-claro); }
+
+  .btn-conectar {
+    width: 100%;
+    background: var(--agua);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 11px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 0.5rem;
+    transition: background 0.2s;
+  }
+
+  .btn-conectar:hover { background: var(--agua-oscuro); }
+
+  .card {
+    background: white;
+    border-radius: 16px;
+    border: 1px solid var(--borde);
+    padding: 1.25rem;
+  }
+
+  .card-titulo {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+  }
+
+  .blower-status {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 12px;
+    background: var(--rojo-claro);
+    border: 1.5px solid #f9c9c9;
+    transition: all 0.4s;
+  }
+
+  .blower-status.on { background: var(--verde-claro); border-color: #b2dfc2; }
+
+  .blower-icon {
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: var(--rojo);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    flex-shrink: 0;
+    transition: background 0.4s, transform 0.4s;
+  }
+
+  .blower-status.on .blower-icon {
+    background: var(--verde);
+    animation: girar 2s linear infinite;
+  }
+
+  @keyframes girar { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  .blower-info h3 { font-family: 'Space Mono', monospace; font-size: 1.1rem; font-weight: 700; color: var(--rojo); transition: color 0.4s; }
+  .blower-status.on .blower-info h3 { color: var(--verde); }
+  .blower-info p { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+  .countdown { font-family: 'Space Mono', monospace; font-size: 0.9rem; color: var(--agua); font-weight: 700; margin-top: 4px; }
+
+  .modo-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+  .modo-label { font-size: 0.85rem; font-weight: 600; color: var(--texto); }
+  .modo-sublabel { font-size: 0.75rem; color: var(--muted); margin-top: 1px; }
+
+  .toggle { position: relative; width: 48px; height: 26px; cursor: pointer; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .slider-toggle { position: absolute; inset: 0; background: #d1d5db; border-radius: 26px; transition: background 0.3s; }
+  .slider-toggle::before { content: ''; position: absolute; width: 20px; height: 20px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+  .toggle input:checked + .slider-toggle { background: var(--agua); }
+  .toggle input:checked + .slider-toggle::before { transform: translateX(22px); }
+
+  .botones-manual { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem; }
+
+  .btn-manual { padding: 12px; border-radius: 10px; border: 2px solid transparent; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn-encender { background: var(--verde-claro); border-color: #b2dfc2; color: var(--verde); }
+  .btn-encender:hover { background: #c8ecd6; }
+  .btn-encender.activo { background: var(--verde); color: white; border-color: var(--verde); }
+  .btn-apagar { background: var(--rojo-claro); border-color: #f9c9c9; color: var(--rojo); }
+  .btn-apagar:hover { background: #fbd6d6; }
+  .btn-apagar.activo { background: var(--rojo); color: white; border-color: var(--rojo); }
+
+  .tiempo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .tiempo-item label { display: block; margin-bottom: 6px; }
+
+  .stepper-wrap {
+    display: flex;
+    align-items: stretch;
+    background: var(--superficie);
+    border: 1.5px solid var(--borde);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 8px;
+    transition: border-color 0.2s;
+  }
+
+  .stepper-wrap:focus-within { border-color: var(--agua-claro); }
+
+  .stepper-btn {
+    width: 42px;
+    min-height: 44px;
+    border: none;
+    background: transparent;
+    font-size: 1.4rem;
+    font-weight: 400;
+    color: var(--agua);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: manipulation;
+    transition: background 0.15s;
+  }
+
+  .stepper-btn:active { background: var(--borde); }
+
+  .stepper-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    text-align: center;
+    font-family: 'Space Mono', monospace;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--agua);
+    outline: none;
+    padding: 0 2px;
+    width: 0;
+    min-width: 0;
+  }
+
+  .stepper-input::-webkit-inner-spin-button,
+  .stepper-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+  .stepper-input[type=number] { -moz-appearance: textfield; }
+
+  .stepper-unit { font-size: 0.72rem; color: var(--muted); font-weight: 600; padding-right: 10px; display: flex; align-items: center; white-space: nowrap; }
+
+  .paso-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .paso-label { font-size: 0.7rem; color: var(--muted); white-space: nowrap; font-weight: 600; }
+  .paso-opts { display: flex; gap: 4px; }
+  .paso-btn { padding: 2px 7px; border-radius: 6px; border: 1.5px solid var(--borde); background: var(--superficie); font-size: 0.7rem; font-family: 'Space Mono', monospace; color: var(--muted); cursor: pointer; transition: all 0.15s; }
+  .paso-btn.sel { border-color: var(--agua); background: var(--agua); color: white; }
+
+  input[type="range"] { width: 100%; accent-color: var(--agua); }
+
+  .btn-guardar-tiempo { width: 100%; margin-top: 1rem; padding: 10px; background: var(--agua); color: white; border: none; border-radius: 10px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+  .btn-guardar-tiempo:hover { background: var(--agua-oscuro); }
+
+  .metricas { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  .metrica { background: var(--superficie); border-radius: 10px; padding: 0.75rem 1rem; border: 1px solid var(--borde); }
+  .metrica-label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+  .metrica-valor { font-family: 'Space Mono', monospace; font-size: 1.1rem; font-weight: 700; color: var(--texto); margin-top: 4px; }
+
+  .aviso { background: var(--amarillo-claro); border: 1px solid #f5d78e; border-radius: 10px; padding: 0.75rem 1rem; font-size: 0.8rem; color: #7a5000; line-height: 1.5; }
+
+  .oculto { display: none !important; }
+
+  @media (max-width: 400px) { .tiempo-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🐟</div>
+  <div>
+    <h1>Blower Tilapias</h1>
+    <p>Control remoto del estanque</p>
+  </div>
+  <div class="conexion-badge">
+    <div class="dot" id="dotEstado"></div>
+    <span id="textoConexion">Desconectado</span>
+  </div>
+</header>
+
+<main>
+
+  <div id="config-inicial" class="card">
+    <h2>⚙️ Conectar a Firebase</h2>
+    <div class="aviso" style="margin-bottom: 1rem;">
+      Solo debes configurar esto una vez. Los datos se guardan en tu navegador.
+    </div>
+    <div class="campo">
+      <label>URL de tu base de datos</label>
+      <input type="text" id="fbHost" placeholder="https://mi-proyecto-default-rtdb.firebaseio.com/">
+    </div>
+    <div class="campo">
+      <label>Secreto / API Key</label>
+      <input type="password" id="fbAuth" placeholder="Tu secreto de base de datos">
+    </div>
+    <button class="btn-conectar" onclick="conectar()">Conectar</button>
+  </div>
+
+  <div class="card oculto" id="panelEstado">
+    <div class="card-titulo">Estado del blower</div>
+    <div class="blower-status" id="blowerStatus">
+      <div class="blower-icon" id="blowerIcon">💨</div>
+      <div class="blower-info">
+        <h3 id="blowerTexto">APAGADO</h3>
+        <p id="blowerModo">Modo: automático</p>
+        <div class="countdown" id="countdown">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card oculto" id="panelManual">
+    <div class="card-titulo">Control manual</div>
+    <div class="modo-row">
+      <div>
+        <div class="modo-label">Modo manual</div>
+        <div class="modo-sublabel">Desactiva el temporizador automático</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="toggleManual" onchange="cambiarModo()">
+        <span class="slider-toggle"></span>
+      </label>
+    </div>
+    <div class="botones-manual" id="botonesManual" style="opacity: 0.3; pointer-events: none;">
+      <button class="btn-manual btn-encender" id="btnEncender" onclick="comandoManual('ENCENDIDO')">
+        ▶ Encender
+      </button>
+      <button class="btn-manual btn-apagar" id="btnApagar" onclick="comandoManual('APAGADO')">
+        ■ Apagar
+      </button>
+    </div>
+  </div>
+
+  <div class="card oculto" id="panelTiempos">
+    <div class="card-titulo">Temporizador automático</div>
+
+    <div class="tiempo-grid">
+
+      <div class="tiempo-item">
+        <label>Tiempo encendido</label>
+        <div class="stepper-wrap">
+          <button class="stepper-btn" id="btn-minus-Enc">−</button>
+          <input class="stepper-input" type="number" id="input-Enc" value="30" min="0.1" max="120" step="any">
+          <span class="stepper-unit">min</span>
+          <button class="stepper-btn" id="btn-plus-Enc">+</button>
+        </div>
+        <div class="paso-row">
+          <span class="paso-label">Paso:</span>
+          <div class="paso-opts" id="pasos-Enc">
+            <button class="paso-btn" data-v="0.1">0.1</button>
+            <button class="paso-btn" data-v="0.5">0.5</button>
+            <button class="paso-btn sel" data-v="1">1</button>
+            <button class="paso-btn" data-v="5">5</button>
+            <button class="paso-btn" data-v="10">10</button>
+          </div>
+        </div>
+        <input type="range" id="slider-Enc" min="0.1" max="120" step="0.5" value="30">
+      </div>
+
+      <div class="tiempo-item">
+        <label>Tiempo apagado</label>
+        <div class="stepper-wrap">
+          <button class="stepper-btn" id="btn-minus-Apa">−</button>
+          <input class="stepper-input" type="number" id="input-Apa" value="30" min="0.1" max="120" step="any">
+          <span class="stepper-unit">min</span>
+          <button class="stepper-btn" id="btn-plus-Apa">+</button>
+        </div>
+        <div class="paso-row">
+          <span class="paso-label">Paso:</span>
+          <div class="paso-opts" id="pasos-Apa">
+            <button class="paso-btn" data-v="0.1">0.1</button>
+            <button class="paso-btn" data-v="0.5">0.5</button>
+            <button class="paso-btn sel" data-v="1">1</button>
+            <button class="paso-btn" data-v="5">5</button>
+            <button class="paso-btn" data-v="10">10</button>
+          </div>
+        </div>
+        <input type="range" id="slider-Apa" min="0.1" max="120" step="0.5" value="30">
+      </div>
+
+    </div>
+
+    <button class="btn-guardar-tiempo" id="btnGuardarTiempo">
+      💾 Guardar configuración
+    </button>
+  </div>
+
+  <div class="card oculto" id="panelMetricas">
+    <div class="card-titulo">Estado del dispositivo ESP32</div>
+    <div class="metricas">
+      <div class="metrica">
+        <div class="metrica-label">Señal WiFi</div>
+        <div class="metrica-valor" id="metricaRSSI">— dBm</div>
+      </div>
+      <div class="metrica">
+        <div class="metrica-label">Modo actual</div>
+        <div class="metrica-valor" id="metricaModo">—</div>
+      </div>
+      <div class="metrica">
+        <div class="metrica-label">T. encendido</div>
+        <div class="metrica-valor" id="metricaTEnc">— min</div>
+      </div>
+      <div class="metrica">
+        <div class="metrica-label">T. apagado</div>
+        <div class="metrica-valor" id="metricaTApa">— min</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ─── ESTADO LOCAL ─────────────────────────────────────────────
+let db = null;
+let modoManualActivo = false;
+
+let cicloEncendido  = false;
+let cicloRestanteMs = 0;
+let tsRecibido      = 0;
+
+let intervalCountdown = null;
+
+// ─── STEPPER DECIMAL ─────────────────────────────────────────
+const campos = ['Enc', 'Apa'];
+const pasos  = { Enc: 1, Apa: 1 };
+let holdTimer  = null;
+let holdRepeat = null;
+let holdActive = false;
+
+const HOLD_DELAY    = 500;
+const HOLD_INTERVAL = 100;
+
+function clampVal(v) {
+  const n = parseFloat(parseFloat(v).toFixed(4));
+  return Math.max(0.1, Math.min(120, isNaN(n) ? 0.1 : n));
+}
+
+function getVal(id) {
+  return parseFloat(document.getElementById('input-' + id).value) || 0.1;
+}
+
+function setVal(id, v) {
+  v = clampVal(v);
+  const display = Number.isInteger(v) ? String(v) : parseFloat(v.toFixed(4)).toString();
+  document.getElementById('input-' + id).value = display;
+  document.getElementById('slider-' + id).value = v;
+}
+
+function stepVal(id, dir) {
+  const actual = getVal(id);
+  const paso   = pasos[id];
+  const nuevo  = Math.round((actual + dir * paso) * 10000) / 10000;
+  setVal(id, nuevo);
+}
+
+function startHold(id, dir) {
+  holdActive = false;
+  stepVal(id, dir);
+  holdTimer = setTimeout(() => {
+    holdActive = true;
+    holdRepeat = setInterval(() => stepVal(id, dir), HOLD_INTERVAL);
+  }, HOLD_DELAY);
+}
+
+function stopHold() {
+  clearTimeout(holdTimer);
+  clearInterval(holdRepeat);
+  holdTimer  = null;
+  holdRepeat = null;
+  holdActive = false;
+}
+
+function initSteppers() {
+  campos.forEach(id => {
+    const btnPlus  = document.getElementById('btn-plus-'  + id);
+    const btnMinus = document.getElementById('btn-minus-' + id);
+
+    function attachPointer(btn, dir) {
+      btn.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        btn.setPointerCapture(e.pointerId);
+        startHold(id, dir);
+      });
+      btn.addEventListener('pointerup',    stopHold);
+      btn.addEventListener('pointercancel', stopHold);
+    }
+
+    attachPointer(btnPlus,   1);
+    attachPointer(btnMinus, -1);
+
+    const inp = document.getElementById('input-' + id);
+    inp.addEventListener('change', function () {
+      setVal(id, parseFloat(this.value));
+    });
+    inp.addEventListener('input', function () {
+      const v = parseFloat(this.value);
+      if (!isNaN(v)) document.getElementById('slider-' + id).value = v;
+    });
+
+    document.getElementById('slider-' + id).addEventListener('input', function () {
+      setVal(id, parseFloat(this.value));
+    });
+
+    document.querySelectorAll('#pasos-' + id + ' .paso-btn').forEach(btn => {
+      btn.addEventListener('click', function () {
+        pasos[id] = parseFloat(this.dataset.v);
+        document.querySelectorAll('#pasos-' + id + ' .paso-btn')
+          .forEach(b => b.classList.remove('sel'));
+        this.classList.add('sel');
+      });
+    });
+  });
+
+  document.addEventListener('pointerup',    stopHold);
+  document.addEventListener('pointercancel', stopHold);
+
+  document.getElementById('btnGuardarTiempo').addEventListener('click', guardarTiempos);
+}
+
+// ─── CONECTAR A FIREBASE ──────────────────────────────────────
+function conectar() {
+  const host = document.getElementById('fbHost').value.trim();
+  const auth = document.getElementById('fbAuth').value.trim();
+  if (!host || !auth) {
+    alert('Por favor ingresa la URL y el secreto de tu base de datos Firebase.');
+    return;
+  }
+  localStorage.setItem('fb_host', host);
+  localStorage.setItem('fb_auth', auth);
+  iniciarFirebase(host, auth);
+}
+
+function iniciarFirebase(host, apiKey) {
+  try {
+    if (firebase.apps.length) {
+      firebase.app().delete().then(() => crearApp(host, apiKey));
+    } else {
+      crearApp(host, apiKey);
+    }
+  } catch(e) {
+    crearApp(host, apiKey);
+  }
+}
+
+function crearApp(host, apiKey) {
+  const match     = host.match(/https:\/\/([^\.]+)/);
+  const projectId = match ? match[1] : 'mi-proyecto';
+  firebase.initializeApp({ apiKey, databaseURL: host, projectId });
+  db = firebase.database();
+  escucharCambios();
+}
+
+// ─── ESCUCHAR DATOS EN TIEMPO REAL ────────────────────────────
+function escucharCambios() {
+  if (!db) return;
+
+  db.ref('.info/connected').on('value', snap => {
+    const online = snap.val();
+    document.getElementById('dotEstado').className = 'dot ' + (online ? 'online' : 'offline');
+    document.getElementById('textoConexion').textContent = online ? 'Conectado' : 'Reconectando...';
+    if (online) {
+      ['panelEstado','panelManual','panelTiempos','panelMetricas'].forEach(id =>
+        document.getElementById(id).classList.remove('oculto')
+      );
+      document.getElementById('config-inicial').classList.add('oculto');
+    }
+  });
+
+  db.ref('/estado').on('value', snap => {
+    const estado = snap.val();
+    if (!estado) return;
+
+    const encendidoAnterior = cicloEncendido;
+    cicloEncendido = estado.blower === 'ON';
+
+    if (estado.restanteMs !== undefined) {
+      cicloRestanteMs = estado.restanteMs;
+      tsRecibido      = Date.now();
+    }
+
+    if (cicloEncendido !== encendidoAnterior) {
+      actualizarUI(estado);
+      tickCountdown();
+    } else {
+      actualizarUI(estado);
+    }
+  });
+
+  db.ref('/config').on('value', snap => {
+    const cfg = snap.val();
+    if (!cfg) return;
+    if (cfg.tiempoEncendido !== undefined) {
+      setVal('Enc', cfg.tiempoEncendido);
+      document.getElementById('metricaTEnc').textContent = cfg.tiempoEncendido + ' min';
+    }
+    if (cfg.tiempoApagado !== undefined) {
+      setVal('Apa', cfg.tiempoApagado);
+      document.getElementById('metricaTApa').textContent = cfg.tiempoApagado + ' min';
+    }
+    if (cfg.modoManual !== undefined) {
+      modoManualActivo = cfg.modoManual;
+      document.getElementById('toggleManual').checked = cfg.modoManual;
+      const botones = document.getElementById('botonesManual');
+      botones.style.opacity       = cfg.modoManual ? '1' : '0.3';
+      botones.style.pointerEvents = cfg.modoManual ? 'auto' : 'none';
+    }
+  });
+
+  if (intervalCountdown) clearInterval(intervalCountdown);
+  intervalCountdown = setInterval(tickCountdown, 500);
+}
+
+// ─── COUNTDOWN LOCAL ──────────────────────────────────────────
+function tickCountdown() {
+  if (modoManualActivo) {
+    document.getElementById('countdown').textContent = 'Modo manual activo';
+    return;
+  }
+
+  const msDesde  = Date.now() - tsRecibido;
+  let   restante = cicloRestanteMs - msDesde;
+
+  if (restante <= 0) {
+    restante = 0;
+    const estadoAnticipado = !cicloEncendido;
+
+    document.getElementById('blowerStatus').classList.toggle('on', estadoAnticipado);
+    document.getElementById('blowerTexto').textContent = estadoAnticipado ? 'ENCENDIDO' : 'APAGADO';
+    document.getElementById('btnEncender').classList.toggle('activo',  estadoAnticipado);
+    document.getElementById('btnApagar').classList.toggle('activo',   !estadoAnticipado);
+
+    document.getElementById('countdown').textContent = '— esperando Firebase —';
+    return;
+  }
+
+  const totalSeg = Math.ceil(restante / 1000);
+  const min = Math.floor(totalSeg / 60);
+  const seg = totalSeg % 60;
+  const texto  = String(min).padStart(2,'0') + ':' + String(seg).padStart(2,'0');
+  const prefijo = cicloEncendido ? '⬤ Próximo apagado: ' : '◯ Próximo encendido: ';
+  document.getElementById('countdown').textContent = prefijo + texto;
+}
+
+// ─── ACTUALIZAR INTERFAZ ──────────────────────────────────────
+function actualizarUI(estado) {
+  const encendido = estado.blower === 'ON';
+  document.getElementById('blowerStatus').classList.toggle('on', encendido);
+  document.getElementById('blowerTexto').textContent = encendido ? 'ENCENDIDO' : 'APAGADO';
+  document.getElementById('blowerModo').textContent  = 'Modo: ' + (estado.modo === 'MANUAL' ? 'manual' : 'automático');
+  document.getElementById('btnEncender').classList.toggle('activo',  encendido);
+  document.getElementById('btnApagar').classList.toggle('activo',   !encendido);
+  if (estado.rssi) document.getElementById('metricaRSSI').textContent = estado.rssi + ' dBm';
+  if (estado.modo) document.getElementById('metricaModo').textContent  = estado.modo;
+}
+
+// ─── CAMBIAR MODO ─────────────────────────────────────────────
+function cambiarModo() {
+  if (!db) return;
+  const esManual = document.getElementById('toggleManual').checked;
+  db.ref('/config/modoManual').set(esManual);
+  const botones = document.getElementById('botonesManual');
+  botones.style.opacity       = esManual ? '1' : '0.3';
+  botones.style.pointerEvents = esManual ? 'auto' : 'none';
+}
+
+// ─── COMANDO MANUAL ───────────────────────────────────────────
+function comandoManual(cmd) {
+  if (!db) return;
+  db.ref('/config/comandoManual').set(cmd);
+}
+
+// ─── GUARDAR TIEMPOS ──────────────────────────────────────────
+function guardarTiempos() {
+  if (!db) return;
+  const enc = getVal('Enc');
+  const apa = getVal('Apa');
+  db.ref('/config').update({
+    tiempoEncendido: enc,
+    tiempoApagado:   apa
+  }).then(() => {
+    const btn = document.getElementById('btnGuardarTiempo');
+    btn.textContent = '✔ Guardado!';
+    setTimeout(() => { btn.textContent = '💾 Guardar configuración'; }, 2000);
+  });
+}
+
+// ─── INICIO ───────────────────────────────────────────────────
+window.onload = () => {
+  initSteppers();
+  const host = localStorage.getItem('fb_host');
+  const auth = localStorage.getItem('fb_auth');
+  if (host && auth) {
+    document.getElementById('fbHost').value = host;
+    document.getElementById('fbAuth').value = auth;
+    iniciarFirebase(host, auth);
+  }
+};
+</script>
+</body>
+</html>
