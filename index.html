@@ -340,7 +340,7 @@
     border-color: var(--rojo);
   }
 
-  /* Sliders de tiempo */
+  /* Stepper +/- (reemplaza input number) */
   .tiempo-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -349,45 +349,57 @@
 
   .tiempo-item label {
     display: block;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
 
-  .tiempo-controls {
+  .stepper {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
+    background: var(--superficie);
+    border: 1.5px solid var(--borde);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 8px;
   }
 
-  input[type="number"].input-minutos {
-    width: 72px;
-    padding: 5px 8px;
-    border: 1.5px solid var(--borde);
-    border-radius: 8px;
+  .stepper-btn {
+    width: 44px;
+    height: 44px;
+    border: none;
+    background: transparent;
+    font-size: 1.4rem;
+    font-weight: 400;
+    color: var(--agua);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: manipulation;
+  }
+
+  .stepper-btn:active { background: var(--borde); }
+
+  .stepper-val {
+    flex: 1;
+    text-align: center;
     font-family: 'Space Mono', monospace;
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-weight: 700;
     color: var(--agua);
-    background: var(--superficie);
-    outline: none;
-    text-align: center;
-    transition: border-color 0.2s;
-    -moz-appearance: textfield;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    user-select: none;
   }
 
-  input[type="number"].input-minutos::-webkit-inner-spin-button,
-  input[type="number"].input-minutos::-webkit-outer-spin-button {
-    opacity: 1;
-  }
-
-  input[type="number"].input-minutos:focus {
-    border-color: var(--agua-claro);
-  }
-
-  .min-label {
-    font-size: 0.75rem;
+  .stepper-unit {
+    font-size: 0.72rem;
     color: var(--muted);
     font-weight: 600;
+    padding-right: 10px;
     white-space: nowrap;
   }
 
@@ -540,24 +552,32 @@
     <div class="tiempo-grid">
       <div class="tiempo-item">
         <label>Tiempo encendido</label>
-        <div class="tiempo-controls">
-          <input type="number" class="input-minutos" id="inputEncendido"
-                 min="0.1" max="120" step="0.1" value="30"
-                 oninput="sincronizarDesdeInput('Encendido')">
-          <span class="min-label">min</span>
+        <div class="stepper">
+          <button class="stepper-btn"
+            ontouchstart="startHold('Encendido',-1)" ontouchend="stopHold()" onmouseleave="stopHold()"
+            onmousedown="startHold('Encendido',-1)" onmouseup="stopHold()">−</button>
+          <span class="stepper-val" id="valEncendido">30</span>
+          <span class="stepper-unit">min</span>
+          <button class="stepper-btn"
+            ontouchstart="startHold('Encendido',1)" ontouchend="stopHold()" onmouseleave="stopHold()"
+            onmousedown="startHold('Encendido',1)" onmouseup="stopHold()">+</button>
         </div>
-        <input type="range" id="sliderEncendido" min="0.1" max="120" step="0.1" value="30"
+        <input type="range" id="sliderEncendido" min="1" max="120" step="1" value="30"
                oninput="sincronizarDesdeSlider('Encendido')">
       </div>
       <div class="tiempo-item">
         <label>Tiempo apagado</label>
-        <div class="tiempo-controls">
-          <input type="number" class="input-minutos" id="inputApagado"
-                 min="0.1" max="120" step="0.1" value="30"
-                 oninput="sincronizarDesdeInput('Apagado')">
-          <span class="min-label">min</span>
+        <div class="stepper">
+          <button class="stepper-btn"
+            ontouchstart="startHold('Apagado',-1)" ontouchend="stopHold()" onmouseleave="stopHold()"
+            onmousedown="startHold('Apagado',-1)" onmouseup="stopHold()">−</button>
+          <span class="stepper-val" id="valApagado">30</span>
+          <span class="stepper-unit">min</span>
+          <button class="stepper-btn"
+            ontouchstart="startHold('Apagado',1)" ontouchend="stopHold()" onmouseleave="stopHold()"
+            onmousedown="startHold('Apagado',1)" onmouseup="stopHold()">+</button>
         </div>
-        <input type="range" id="sliderApagado" min="0.1" max="120" step="0.1" value="30"
+        <input type="range" id="sliderApagado" min="1" max="120" step="1" value="30"
                oninput="sincronizarDesdeSlider('Apagado')">
       </div>
     </div>
@@ -597,16 +617,20 @@
 let db = null;
 let modoManualActivo = false;
 
-// Datos del ciclo — la app los usa para calcular el countdown localmente
-// en vez de depender de lo que reporte el ESP32 cada N segundos.
-let cicloEncendido   = false;   // true = blower ON ahora
-let cicloSegundos    = 0;       // segundos transcurridos en el ciclo actual (reportado por ESP32)
-let tiempoEncMinutos = 30;      // minutos de encendido configurados
-let tiempoApaMinutos = 30;      // minutos de apagado configurados
-let tsRecibido       = 0;       // Date.now() cuando se recibió cicloSegundos (para interpolar)
+// Datos del ciclo
+let cicloEncendido   = false;
+let cicloRestanteMs  = 0;
+let tsRecibido       = 0;
 
-// setInterval que corre el countdown localmente cada segundo
+// setInterval del countdown
 let intervalCountdown = null;
+
+// Valores de los steppers
+let valsMinutos = { Encendido: 30, Apagado: 30 };
+
+// Hold-to-repeat para los botones +/-
+let holdTimer    = null;
+let holdInterval = null;
 
 // ─── CONECTAR A FIREBASE ──────────────────────────────────────
 function conectar() {
@@ -661,11 +685,10 @@ function escucharCambios() {
     const estado = snap.val();
     if (!estado) return;
 
-    // Guardar punto de referencia del ciclo para interpolación local
     cicloEncendido = estado.blower === 'ON';
-    if (estado.cicloSegundos !== undefined) {
-      cicloSegundos = estado.cicloSegundos;
-      tsRecibido    = Date.now();
+    if (estado.restanteMs !== undefined) {
+      cicloRestanteMs = estado.restanteMs;
+      tsRecibido      = Date.now();
     }
 
     actualizarUI(estado);
@@ -676,15 +699,11 @@ function escucharCambios() {
     if (!cfg) return;
 
     if (cfg.tiempoEncendido) {
-      tiempoEncMinutos = cfg.tiempoEncendido;
-      document.getElementById('sliderEncendido').value = cfg.tiempoEncendido;
-      document.getElementById('inputEncendido').value  = cfg.tiempoEncendido;
+      setValMinutos('Encendido', cfg.tiempoEncendido);
       document.getElementById('metricaTEnc').textContent = cfg.tiempoEncendido + ' min';
     }
     if (cfg.tiempoApagado) {
-      tiempoApaMinutos = cfg.tiempoApagado;
-      document.getElementById('sliderApagado').value = cfg.tiempoApagado;
-      document.getElementById('inputApagado').value  = cfg.tiempoApagado;
+      setValMinutos('Apagado', cfg.tiempoApagado);
       document.getElementById('metricaTApa').textContent = cfg.tiempoApagado + ' min';
     }
     if (cfg.modoManual !== undefined) {
@@ -696,30 +715,23 @@ function escucharCambios() {
     }
   });
 
-  // Arrancar countdown local — corre cada segundo sin importar Firebase
   if (intervalCountdown) clearInterval(intervalCountdown);
   intervalCountdown = setInterval(tickCountdown, 1000);
 }
 
-// ─── COUNTDOWN LOCAL (corre en el navegador, suave, sin saltos) ──
+// ─── COUNTDOWN LOCAL ──────────────────────────────────────────
 function tickCountdown() {
   if (modoManualActivo) {
     document.getElementById('countdown').textContent = 'Modo manual activo';
     return;
   }
-
-  // Calcular cuántos segundos han pasado desde que Firebase nos dio el dato
-  const segsDesdeRecepcion = Math.floor((Date.now() - tsRecibido) / 1000);
-  const segsEnCiclo        = cicloSegundos + segsDesdeRecepcion;
-
-  const duracionSeg = (cicloEncendido ? tiempoEncMinutos : tiempoApaMinutos) * 60;
-  const restante    = Math.max(0, duracionSeg - segsEnCiclo);
-
-  const min = Math.floor(restante / 60);
-  const seg = restante % 60;
-  const texto = `${String(min).padStart(2,'0')}:${String(seg).padStart(2,'0')}`;
-  const prefijo = cicloEncendido ? '⬤ Próximo apagado: ' : '◯ Próximo encendido: ';
-
+  const msDesdeRecepcion = Date.now() - tsRecibido;
+  const restanteMs       = Math.max(0, cicloRestanteMs - msDesdeRecepcion);
+  const totalSeg = Math.ceil(restanteMs / 1000);
+  const min      = Math.floor(totalSeg / 60);
+  const seg      = totalSeg % 60;
+  const texto    = String(min).padStart(2,'0') + ':' + String(seg).padStart(2,'0');
+  const prefijo  = cicloEncendido ? '⬤ Próximo apagado: ' : '◯ Próximo encendido: ';
   document.getElementById('countdown').textContent = prefijo + texto;
 }
 
@@ -752,39 +764,37 @@ function comandoManual(cmd) {
   db.ref('/config/comandoManual').set(cmd);
 }
 
-// ─── SLIDERS + INPUTS SINCRONIZADOS ──────────────────────────
+// ─── STEPPER +/- ──────────────────────────────────────────────
+function setValMinutos(cual, v) {
+  v = Math.min(120, Math.max(1, Math.round(v)));
+  valsMinutos[cual] = v;
+  document.getElementById('val' + cual).textContent = v;
+  document.getElementById('slider' + cual).value = v;
+}
+
 function sincronizarDesdeSlider(cual) {
-  const val = parseFloat(document.getElementById('slider' + cual).value);
-  document.getElementById('input' + cual).value = val;
+  setValMinutos(cual, parseInt(document.getElementById('slider' + cual).value));
 }
 
-function sincronizarDesdeInput(cual) {
-  let val = parseFloat(document.getElementById('input' + cual).value);
-  if (isNaN(val) || val < 0.1) val = 0.1;
-  if (val > 120) val = 120;
-  // Redondear a 1 decimal para evitar ruido
-  val = Math.round(val * 10) / 10;
-  document.getElementById('slider' + cual).value = val;
+function startHold(cual, dir) {
+  setValMinutos(cual, valsMinutos[cual] + dir);
+  holdTimer = setTimeout(() => {
+    holdInterval = setInterval(() => setValMinutos(cual, valsMinutos[cual] + dir), 80);
+  }, 400);
 }
 
-function actualizarSlider(cual, val) {
-  // Compatibilidad con código viejo — no hace falta pero por si acaso
-  document.getElementById('input' + cual).value = val;
+function stopHold() {
+  clearTimeout(holdTimer);
+  clearInterval(holdInterval);
 }
 
 // ─── GUARDAR TIEMPOS ──────────────────────────────────────────
 function guardarTiempos() {
   if (!db) return;
-  let tEnc = parseFloat(document.getElementById('inputEncendido').value);
-  let tApa = parseFloat(document.getElementById('inputApagado').value);
-
-  // Validar
-  if (isNaN(tEnc) || tEnc < 0.1) tEnc = 0.1;
-  if (isNaN(tApa) || tApa < 0.1) tApa = 0.1;
-  if (tEnc > 120) tEnc = 120;
-  if (tApa > 120) tApa = 120;
-
-  db.ref('/config').update({ tiempoEncendido: tEnc, tiempoApagado: tApa }).then(() => {
+  db.ref('/config').update({
+    tiempoEncendido: valsMinutos.Encendido,
+    tiempoApagado:   valsMinutos.Apagado
+  }).then(() => {
     const btn = document.querySelector('.btn-guardar-tiempo');
     btn.textContent = '✔ Guardado!';
     setTimeout(() => { btn.textContent = '💾 Guardar configuración'; }, 2000);
